@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"/>
+  <meta name="theme-color" content="#0F1810"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Bender"/>
+  <meta name="description" content="Bender Exports Ltd. — Integrated Operations System"/>
+  <link rel="manifest" href="/manifest.json"/>
+  <link rel="icon" href="/icons/icon-192.svg"/>
+  <link rel="apple-touch-icon" href="/icons/icon-192.svg"/>
+  <title>Bender Exports</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    html,body,#root{height:100%;}
+    #splash{
+      position:fixed;inset:0;background:#080E0A;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
+      z-index:9999;transition:opacity .4s ease;
+    }
+    #splash.hide{opacity:0;pointer-events:none;}
+    .splash-logo{font-family:Georgia,serif;font-size:28px;font-weight:700;color:#C8A84B;letter-spacing:2px;}
+    .splash-sub{font-size:13px;color:#3A5A3B;}
+    .splash-bar{width:160px;height:3px;background:#1E2E1F;border-radius:4px;overflow:hidden;}
+    .splash-fill{height:100%;background:#C8A84B;border-radius:4px;animation:load 1.2s ease forwards;}
+    @keyframes load{from{width:0%}to{width:100%}}
+  </style>
+</head>
+<body>
+  <div id="splash">
+    <svg width="52" height="52" viewBox="0 0 52 52">
+      <rect width="52" height="52" rx="12" fill="#0F1810" stroke="#C8A84B" stroke-width="1.5" stroke-opacity="0.35"/>
+      <text x="50%" y="57%" dominant-baseline="middle" text-anchor="middle"
+        fill="#C8A84B" font-size="18" font-weight="700" font-family="Georgia,serif">BE</text>
+    </svg>
+    <div class="splash-logo">Bender Exports</div>
+    <div class="splash-sub">Integrated Operations System</div>
+    <div class="splash-bar"><div class="splash-fill"></div></div>
+  </div>
+
+  <div id="root"></div>
+
+  <!-- React + Recharts from CDN (cached by SW after first load) -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js" crossorigin></script>
+
+  <!-- Supabase JS client (for Realtime subscriptions in the frontend) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js" crossorigin></script>
+
+  <script>
+  // ── Supabase client (anon key — safe in browser, RLS enforced) ──────
+  // These values are injected at deploy time. In development, set them here.
+  // In production, use your server's template rendering or a build step.
+  window.__SUPABASE_URL  = window.__SUPABASE_URL  || "REPLACE_WITH_YOUR_SUPABASE_URL";
+  window.__SUPABASE_ANON = window.__SUPABASE_ANON || "REPLACE_WITH_YOUR_SUPABASE_ANON_KEY";
+
+  if (window.__SUPABASE_URL !== "REPLACE_WITH_YOUR_SUPABASE_URL") {
+    window.__supabase = supabase.createClient(window.__SUPABASE_URL, window.__SUPABASE_ANON);
+  }
+
+  // ── Online/Offline detection ────────────────────────────────────────
+  window.__benderOnline = navigator.onLine;
+  window.addEventListener('online',  () => { window.__benderOnline = true;  window.dispatchEvent(new Event('bender:online'));  });
+  window.addEventListener('offline', () => { window.__benderOnline = false; window.dispatchEvent(new Event('bender:offline')); });
+
+  // ── Service Worker registration ─────────────────────────────────────
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', async () => {
+      try {
+        const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+        console.log('[SW] Registered', reg.scope);
+        reg.addEventListener('updatefound', () => {
+          const sw = reg.installing;
+          sw.addEventListener('statechange', () => {
+            if (sw.state === 'installed' && navigator.serviceWorker.controller)
+              console.log('[SW] Update available — reload to apply');
+          });
+        });
+        // Pass auth token to SW so it can replay the offline queue
+        window.addEventListener('bender:token', (e) => {
+          if (navigator.serviceWorker.controller)
+            navigator.serviceWorker.controller.postMessage({ type: 'SET_TOKEN', token: e.detail });
+        });
+        // Flush offline queue when back online
+        window.addEventListener('bender:online', () => {
+          if (navigator.serviceWorker.controller)
+            navigator.serviceWorker.controller.postMessage({ type: 'FLUSH_QUEUE' });
+        });
+        // Listen for flush confirmation
+        navigator.serviceWorker.addEventListener('message', (e) => {
+          if (e.data?.type === 'QUEUE_FLUSHED')
+            window.dispatchEvent(new CustomEvent('bender:queue_flushed', { detail: e.data.flushed }));
+        });
+      } catch(e) { console.warn('[SW] Registration failed:', e); }
+    });
+  }
+
+  // ── PWA Install prompt ──────────────────────────────────────────────
+  let __installPrompt = null;
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    __installPrompt = e;
+    window.dispatchEvent(new Event('bender:installable'));
+  });
+  window.benderInstallPWA = async () => {
+    if (!__installPrompt) return false;
+    __installPrompt.prompt();
+    const { outcome } = await __installPrompt.userChoice;
+    __installPrompt = null;
+    return outcome === 'accepted';
+  };
+  </script>
+
+  <!-- Expose React hooks + Recharts globally for app.js -->
+  <script>
+  const { useState, useRef, useEffect, createContext, useContext } = React;
+  const { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
+          Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } = Recharts;
+  </script>
+
+  <script src="/app.js"></script>
+
+  <script>
+  window.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+      try {
+        ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+      } catch(e) {
+        document.getElementById('root').innerHTML =
+          '<div style="padding:40px;color:#ff6666;font-family:monospace;background:#080E0A;min-height:100vh">' +
+          '<h2 style="margin-bottom:16px">Startup Error</h2><pre>' + e.stack + '</pre></div>';
+      }
+      const splash = document.getElementById('splash');
+      setTimeout(() => { splash.classList.add('hide'); setTimeout(() => splash.remove(), 400); }, 800);
+    }, 50);
+  });
+  </script>
+</body>
+</html>

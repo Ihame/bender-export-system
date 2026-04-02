@@ -1,0 +1,20 @@
+{
+  "name": "Bender Exports Ltd.",
+  "short_name": "Bender",
+  "description": "Integrated Operations System — Coffee, Machinery, Construction",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#0F1810",
+  "background_color": "#080E0A",
+  "icons": [
+    { "src": "/icons/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml", "purpose": "maskable any" },
+    { "src": "/icons/icon-512.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "maskable any" }
+  ],
+  "shortcuts": [
+    { "name": "Dashboard",    "url": "/",              "icons": [{ "src": "/icons/icon-192.svg", "sizes": "192x192" }] },
+    { "name": "Cherry Entry", "url": "/?view=coffee",  "icons": [{ "src": "/icons/icon-192.svg", "sizes": "192x192" }] },
+    { "name": "Reports",      "url": "/?view=reports", "icons": [{ "src": "/icons/icon-192.svg", "sizes": "192x192" }] }
+  ]
+}
