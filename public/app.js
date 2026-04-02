@@ -1008,6 +1008,7 @@ function App() {
   }, []);
   const addNote = (text, type = "info") => setNotifications((p) => [{ id: Date.now(), text, type, read: false, time: (/* @__PURE__ */ new Date()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }, ...p]);
   const login = async (email, password) => {
+    const demoFallback = () => INIT_USERS.find((u) => u.email === email && u.password === password && u.active) || null;
     try {
       const tryLogin = async () => {
         const res = await fetch("/api/auth/login", {
@@ -1047,7 +1048,7 @@ function App() {
         }
       }
 
-      if (!data) return null;
+      if (!data) return demoFallback();
 
       setAccessToken(data.token);
       // Inform SW (if registered) about the auth token so it can replay offline ops.
@@ -1055,8 +1056,7 @@ function App() {
       return fromBackendUser(data.user);
     } catch (e) {
       // Last resort fallback for demo users if API auth is unavailable.
-      const demo = INIT_USERS.find((u) => u.email === email && u.password === password && u.active);
-      return demo || null;
+      return demoFallback();
     }
   };
   const ctx = { users, setUsers, cwsList, setCwsList, farmers: farmers2, setFarmers, seasons, setSeasons, stationSeasons, setStationSeasons, cherry, setCherry, cashbook, setCashbook, bankTx, setBankTx, expenses, setExpenses, debts, setDebts, stock, setStock, fundRequests, setFundRequests, warehouseStock, setWarehouseStock, projects, setProjects, projectCosts, setProjectCosts, milestones, setMilestones, contractors, setContractors, machines, setMachines, assistants, setAssistants, tasks, setTasks, machTx, setMachTx, driverLogs, setDriverLogs, leaves, setLeaves, pending, setPending, system, setSystem, currentUser, online, setOnline, notifications, setNotifications, addNote, page, setPage, dbReady };
