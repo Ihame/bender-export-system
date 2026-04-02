@@ -282,6 +282,69 @@ const TABLES = [
   "users",
   "system"
 ];
+
+// ── Browser persistence (offline DB) ──────────────────────────────────
+// The app stores its working state via `window.storage` (used by DB.load/save).
+// Earlier builds referenced `window.storage` but didn't define it, so writes
+// were silently dropped (caught by try/catch).
+(function initBrowserStorage() {
+  if (typeof window === "undefined") return;
+  if (window.storage && typeof window.storage.get === "function") return;
+
+  const DB_NAME = "bender-storage-v1";
+  const STORE = "kv";
+  const VERSION = 1;
+
+  function openDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, VERSION);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(STORE)) {
+          db.createObjectStore(STORE, { keyPath: "key" });
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function getItem(key) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, "readonly");
+      const store = tx.objectStore(STORE);
+      const r = store.get(key);
+      r.onsuccess = () => resolve(r.result || null);
+      r.onerror = () => reject(r.error);
+    });
+  }
+
+  async function setItem(key, value) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, "readwrite");
+      const store = tx.objectStore(STORE);
+      const r = store.put({ key, value });
+      r.onsuccess = () => resolve(true);
+      r.onerror = () => reject(r.error);
+    });
+  }
+
+  async function delItem(key) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, "readwrite");
+      const store = tx.objectStore(STORE);
+      const r = store.delete(key);
+      r.onsuccess = () => resolve(true);
+      r.onerror = () => reject(r.error);
+    });
+  }
+
+  window.storage = { get: getItem, set: setItem, delete: delItem };
+})();
+
 const DB = {
   async load(table) {
     try {
