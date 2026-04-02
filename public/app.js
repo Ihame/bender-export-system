@@ -345,23 +345,431 @@ const TABLES = [
   window.storage = { get: getItem, set: setItem, delete: delItem };
 })();
 
+const BENDER_TOKEN_KEY = "bender:access_token";
+
+function getAccessToken() {
+  try {
+    if (window.__benderAccessToken) return window.__benderAccessToken;
+    return localStorage.getItem(BENDER_TOKEN_KEY);
+  } catch (e) {
+    return window.__benderAccessToken || null;
+  }
+}
+
+function setAccessToken(token) {
+  try {
+    window.__benderAccessToken = token;
+    if (token) localStorage.setItem(BENDER_TOKEN_KEY, token);
+    else localStorage.removeItem(BENDER_TOKEN_KEY);
+  } catch (e) {
+    window.__benderAccessToken = token;
+  }
+}
+
+function num(v) {
+  if (v === null || v === void 0) return v;
+  if (typeof v === "number") return v;
+  const n = Number(v);
+  return Number.isNaN(n) ? v : n;
+}
+
+function toBackendTable(tableKey) {
+  // Frontend uses a few shorter keys; backend tables follow migration.sql.
+  if (tableKey === "bank") return "bank_transactions";
+  if (tableKey === "warehouse") return "warehouse_stock";
+  return tableKey;
+}
+
+function toBackendRecord(tableKey, rec) {
+  // IMPORTANT: server expects snake_case columns matching supabase_migration.sql.
+  // We only send known columns to avoid PostgREST "column does not exist" errors.
+  switch (tableKey) {
+    case "cws":
+      return { id: rec.id, name: rec.name, region: rec.region, image: rec.image };
+    case "farmers":
+      return {
+        id: rec.id, cws_id: rec.cwsId, name: rec.name, farmer_id: rec.farmerId, grp: rec.group,
+        balance: rec.balance, phone: rec.phone, active: rec.active
+      };
+    case "seasons":
+      return {
+        id: rec.id, name: rec.name, start_date: rec.startDate, end_date: rec.endDate,
+        rate_standard: rec.rateStandard, rate_flotant: rec.rateFlotant, status: rec.status,
+        created_by: rec.createdBy, notes: rec.notes, closed_at: rec.closedAt
+      };
+    case "station_seasons":
+      return {
+        id: rec.id, season_id: rec.seasonId, cws_id: rec.cwsId,
+        start_date: rec.startDate, end_date: rec.endDate, status: rec.status
+      };
+    case "cherry":
+      return {
+        id: rec.id, cws_id: rec.cwsId, farmer_id: rec.farmerId, date: rec.date,
+        gnr_number: rec.gnrNumber, standard_kg: rec.standardKg, flotant_kg: rec.flotantKg, total_kg: rec.totalKg,
+        rate_standard: rec.rateStandard, rate_flotant: rec.rateFlotant,
+        payment_standard: rec.paymentStandard, payment_flotant: rec.paymentFlotant,
+        total_paid: rec.totalPaid, avg_rate: rec.avgRate, payment_method: rec.paymentMethod,
+        status: rec.status, by_user: rec.by, paid_by: rec.paidBy, paid_at: rec.paidAt, notes: rec.notes
+      };
+    case "cashbook":
+      return {
+        id: rec.id, cws_id: rec.cwsId, date: rec.date, type: rec.type, category: rec.category,
+        description: rec.description, amount: rec.amount, balance: rec.balance, ref: rec.ref, by_user: rec.by
+      };
+    case "bank":
+      return {
+        id: rec.id, cws_id: rec.cwsId, date: rec.date, type: rec.type,
+        description: rec.description, amount: rec.amount, balance: rec.balance, ref: rec.ref, by_user: rec.by
+      };
+    case "expenses":
+      return {
+        id: rec.id, cws_id: rec.cwsId, date: rec.date, category: rec.category, description: rec.description,
+        amount: rec.amount, capitalizable: rec.exploitable, status: rec.status, by_user: rec.by
+      };
+    case "debts":
+      return {
+        id: rec.id, cws_id: rec.cwsId, date: rec.date, type: rec.type, party: rec.party,
+        description: rec.description, amount: rec.amount, balance: rec.balance, status: rec.status
+      };
+    case "stock":
+      return {
+        id: rec.id, cws_id: rec.cwsId, date: rec.date, description: rec.description, grade: rec.grade,
+        tonnes_in: rec.tonnesIn, tonnes_out: rec.tonnesOut, tonnes_balance: rec.tonnesBalance,
+        unit_cost: rec.unitCost, total_value: rec.totalValue, valuation_method: rec.valuationMethod
+      };
+    case "fund_requests":
+      return {
+        id: rec.id, cws_id: rec.cwsId, requested_by: rec.requestedBy,
+        amount: rec.amount, reason: rec.reason, status: rec.status,
+        requested_at: rec.requestedAt, verified_by: rec.verifiedBy, verified_at: rec.verifiedAt,
+        approved_by: rec.approvedBy, approved_at: rec.approvedAt,
+        transfer_method: rec.transferMethod, transfer_ref: rec.transferRef, notes: rec.notes
+      };
+    case "warehouse":
+      return {
+        id: rec.id, from_cws_id: rec.fromCwsId, sent_by: rec.sentBy, date: rec.date, grade: rec.grade,
+        tonnes: rec.tonnes, lot_number: rec.lotNumber, gnr_refs: rec.gnrRefs,
+        transport_details: rec.transportDetails, status: rec.status,
+        confirmed_by: rec.confirmedBy, confirmed_at: rec.confirmedAt, notes: rec.notes
+      };
+    case "projects":
+      return {
+        id: rec.id, name: rec.name, client: rec.client, budget: rec.budget,
+        start_date: rec.startDate, end_date: rec.endDate, status: rec.status,
+        description: rec.description, created_by: rec.createdBy
+      };
+    case "project_costs":
+      return {
+        id: rec.id, project_id: rec.projectId, date: rec.date, category: rec.category,
+        description: rec.description, amount: rec.amount, by_user: rec.by
+      };
+    case "milestones":
+      return {
+        id: rec.id, project_id: rec.projectId, title: rec.title,
+        target_date: rec.targetDate, completed_date: rec.completedDate, status: rec.status
+      };
+    case "contractors":
+      return {
+        id: rec.id, project_id: rec.projectId, name: rec.name, role: rec.role,
+        phone: rec.phone, contract_value: rec.contractValue, status: rec.status
+      };
+    case "machines":
+      return {
+        id: rec.id, name: rec.name, type: rec.type, plate: rec.plate, status: rec.status,
+        driver_id: rec.driverId, assistant_id: rec.assistantId
+      };
+    case "assistants":
+      return {
+        id: rec.id, name: rec.name, machine_id: rec.machineId, phone: rec.phone
+      };
+    case "tasks":
+      return {
+        id: rec.id, machine_id: rec.machineId,
+        customer: rec.customer, province: rec.province, district: rec.district, sector: rec.sector,
+        cell: rec.cell, village: rec.village,
+        start_date: rec.startDate, end_date: rec.endDate, hourly_rate: rec.hourlyRate,
+        status: rec.status, total_hours: rec.totalHours, notes: rec.notes
+      };
+    case "mach_tx":
+      return {
+        id: rec.id, machine_id: rec.machineId, date: rec.date, type: rec.type, category: rec.category,
+        amount: rec.amount, description: rec.desc, status: rec.status
+      };
+    case "driver_logs":
+      return {
+        id: rec.id, driver_id: rec.driverId, machine_id: rec.machineId, date: rec.date,
+        hours: rec.hours, fuel_received: rec.fuelReceived, task_location: rec.taskLocation,
+        condition: rec.condition, comments: rec.comments, status: rec.status
+      };
+    case "leaves":
+      return {
+        id: rec.id, driver_id: rec.driverId, type: rec.type, date: rec.date, reason: rec.reason, status: rec.status
+      };
+    default:
+      return null;
+  }
+}
+
+function fromBackendRecord(tableKey, row) {
+  // Convert snake_case columns into the camelCase shapes the UI expects.
+  switch (tableKey) {
+    case "cws":
+      return { id: row.id, name: row.name, region: row.region, image: row.image };
+    case "farmers":
+      return {
+        id: row.id, cwsId: row.cws_id, name: row.name, farmerId: row.farmer_id,
+        group: row.grp, balance: num(row.balance), phone: row.phone, active: row.active,
+        createdAt: row.created_at, updatedAt: row.updated_at
+      };
+    case "seasons":
+      return {
+        id: row.id, name: row.name, startDate: row.start_date, endDate: row.end_date,
+        rateStandard: row.rate_standard, rateFlotant: row.rate_flotant, status: row.status,
+        createdBy: row.created_by, notes: row.notes, closedAt: row.closed_at,
+        createdAt: row.created_at, updatedAt: row.updated_at
+      };
+    case "station_seasons":
+      return {
+        id: row.id, seasonId: row.season_id, cwsId: row.cws_id, startDate: row.start_date,
+        endDate: row.end_date, status: row.status, updatedAt: row.updated_at
+      };
+    case "cherry":
+      return {
+        id: row.id, cwsId: row.cws_id, farmerId: row.farmer_id, date: row.date,
+        gnrNumber: row.gnr_number, standardKg: num(row.standard_kg), flotantKg: num(row.flotant_kg), totalKg: num(row.total_kg),
+        rateStandard: num(row.rate_standard), rateFlotant: num(row.rate_flotant),
+        paymentStandard: num(row.payment_standard), paymentFlotant: num(row.payment_flotant),
+        totalPaid: num(row.total_paid), avgRate: num(row.avg_rate), paymentMethod: row.payment_method,
+        status: row.status, by: row.by_user, paidBy: row.paid_by, paidAt: row.paid_at, notes: row.notes
+      };
+    case "cashbook":
+      return {
+        id: row.id, cwsId: row.cws_id, date: row.date, type: row.type, category: row.category,
+        description: row.description, amount: num(row.amount), balance: num(row.balance), ref: row.ref, by: row.by_user,
+        createdAt: row.created_at, updatedAt: row.updated_at
+      };
+    case "bank":
+      return {
+        id: row.id, cwsId: row.cws_id, date: row.date, type: row.type,
+        description: row.description, amount: num(row.amount), balance: num(row.balance), ref: row.ref, by: row.by_user,
+        updatedAt: row.updated_at
+      };
+    case "expenses":
+      return {
+        id: row.id, cwsId: row.cws_id, date: row.date, category: row.category, description: row.description,
+        amount: num(row.amount), exploitable: row.capitalizable, status: row.status, by: row.by_user,
+        updatedAt: row.updated_at
+      };
+    case "debts":
+      return {
+        id: row.id, cwsId: row.cws_id, date: row.date, type: row.type, party: row.party,
+        description: row.description, amount: num(row.amount), balance: num(row.balance), status: row.status,
+        updatedAt: row.updated_at
+      };
+    case "stock":
+      return {
+        id: row.id, cwsId: row.cws_id, date: row.date, description: row.description, grade: row.grade,
+        tonnesIn: num(row.tonnes_in), tonnesOut: num(row.tonnes_out), tonnesBalance: num(row.tonnes_balance),
+        unitCost: num(row.unit_cost), totalValue: num(row.total_value), valuationMethod: row.valuation_method,
+        updatedAt: row.updated_at
+      };
+    case "fund_requests":
+      return {
+        id: row.id, cwsId: row.cws_id, requestedBy: row.requested_by, amount: num(row.amount),
+        reason: row.reason, status: row.status, requestedAt: row.requested_at,
+        verifiedBy: row.verified_by, verifiedAt: row.verified_at,
+        approvedBy: row.approved_by, approvedAt: row.approved_at,
+        transferMethod: row.transfer_method, transferRef: row.transfer_ref, notes: row.notes,
+        updatedAt: row.updated_at
+      };
+    case "warehouse":
+      return {
+        id: row.id, fromCwsId: row.from_cws_id, sentBy: row.sent_by, date: row.date,
+        grade: row.grade, tonnes: num(row.tonnes), lotNumber: row.lot_number, gnrRefs: row.gnr_refs,
+        transportDetails: row.transport_details, status: row.status,
+        confirmedBy: row.confirmed_by, confirmedAt: row.confirmed_at, notes: row.notes,
+        updatedAt: row.updated_at
+      };
+    case "projects":
+      return {
+        id: row.id, name: row.name, client: row.client, budget: num(row.budget),
+        startDate: row.start_date, endDate: row.end_date, status: row.status,
+        description: row.description, createdBy: row.created_by, updatedAt: row.updated_at
+      };
+    case "project_costs":
+      return {
+        id: row.id, projectId: row.project_id, date: row.date, category: row.category,
+        description: row.description, amount: num(row.amount), by: row.by_user, updatedAt: row.updated_at
+      };
+    case "milestones":
+      return {
+        id: row.id, projectId: row.project_id, title: row.title,
+        targetDate: row.target_date, completedDate: row.completed_date, status: row.status, updatedAt: row.updated_at
+      };
+    case "contractors":
+      return {
+        id: row.id, projectId: row.project_id, name: row.name, role: row.role,
+        phone: row.phone, contractValue: num(row.contract_value), status: row.status, updatedAt: row.updated_at
+      };
+    case "machines":
+      return {
+        id: row.id, name: row.name, type: row.type, plate: row.plate, status: row.status,
+        driverId: row.driver_id, assistantId: row.assistant_id, updatedAt: row.updated_at
+      };
+    case "assistants":
+      return { id: row.id, name: row.name, machineId: row.machine_id, phone: row.phone, updatedAt: row.updated_at };
+    case "tasks":
+      return {
+        id: row.id, machineId: row.machine_id,
+        customer: row.customer, province: row.province, district: row.district, sector: row.sector,
+        cell: row.cell, village: row.village,
+        startDate: row.start_date, endDate: row.end_date, hourlyRate: num(row.hourly_rate),
+        status: row.status, totalHours: num(row.total_hours), notes: row.notes, updatedAt: row.updated_at
+      };
+    case "mach_tx":
+      return { id: row.id, machineId: row.machine_id, date: row.date, type: row.type, category: row.category, amount: num(row.amount), desc: row.description, status: row.status, updatedAt: row.updated_at };
+    case "driver_logs":
+      return {
+        id: row.id, driverId: row.driver_id, machineId: row.machine_id, date: row.date, hours: num(row.hours),
+        fuelReceived: num(row.fuel_received), taskLocation: row.task_location, condition: row.condition,
+        comments: row.comments, status: row.status, updatedAt: row.updated_at
+      };
+    case "leaves":
+      return { id: row.id, driverId: row.driver_id, type: row.type, date: row.date, reason: row.reason, status: row.status, updatedAt: row.updated_at };
+    default:
+      return row;
+  }
+}
+
+function fromBackendUser(u) {
+  if (!u) return null;
+  return {
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    role: u.role,
+    cwsAccess: u.cws_access,
+    machineId: u.machine_id,
+    avatar: u.avatar,
+    active: u.active,
+    createdAt: u.created_at,
+    updatedAt: u.updated_at
+  };
+}
+
+async function authFetch(url, opts = {}) {
+  const token = getAccessToken();
+  const headers = { ...(opts.headers || {}) };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  headers["Content-Type"] = headers["Content-Type"] || "application/json";
+  const res = await fetch(url, { ...opts, headers });
+  return res;
+}
+
 const DB = {
-  async load(table) {
+  async load(tableKey) {
+    const token = getAccessToken();
+    if (token) {
+      try {
+        return await DB.loadRemote(tableKey);
+      } catch (e) {
+        console.warn("Remote load failed, falling back to local:", tableKey, e);
+      }
+    }
     try {
-      const r = await window.storage.get("db:" + table);
+      const r = await window.storage.get("db:" + tableKey);
       return r ? JSON.parse(r.value) : null;
     } catch (e) {
       return null;
     }
   },
-  async save(table, data) {
-    try {
-      await window.storage.set("db:" + table, JSON.stringify(data));
-      return true;
-    } catch (e) {
-      console.error("DB save error", table, e);
-      return false;
+  async save(tableKey, data) {
+    const token = getAccessToken();
+    let remoteOk = false;
+    if (token) {
+      try {
+        await DB.saveRemote(tableKey, data);
+        remoteOk = true;
+      } catch (e) {
+        console.warn("Remote save failed, keeping local copy:", tableKey, e);
+      }
     }
+    try {
+      await window.storage.set("db:" + tableKey, JSON.stringify(data));
+    } catch (e) {
+      console.error("DB local save error", tableKey, e);
+    }
+    return remoteOk;
+  },
+  async loadRemote(tableKey) {
+    const token = getAccessToken();
+    if (!token) return null;
+
+    // Special endpoints (not part of the generic /api/<table> routes)
+    if (tableKey === "system") {
+      const res = await authFetch("/api/system", { method: "GET" });
+      if (!res.ok) throw new Error("Failed loading system");
+      const cfg = await res.json();
+      return cfg && Object.keys(cfg).length ? cfg : INIT_SYSTEM;
+    }
+    if (tableKey === "users") {
+      const res = await authFetch("/api/users", { method: "GET" });
+      if (!res.ok) throw new Error("Failed loading users");
+      const rows = await res.json();
+      if (!Array.isArray(rows) || rows.length === 0) return INIT_USERS;
+      return rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        email: r.email,
+        role: r.role,
+        cwsAccess: r.cws_access,
+        machineId: r.machine_id,
+        avatar: r.avatar,
+        active: r.active,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      }));
+    }
+
+    const backendTable = toBackendTable(tableKey);
+    const route = "/api/" + backendTable.replace(/_/g, "-");
+    const res = await authFetch(route, { method: "GET" });
+    if (!res.ok) throw new Error(`Failed loading ${tableKey}`);
+    const rows = await res.json();
+    return rows.map((row) => fromBackendRecord(tableKey, row));
+  },
+  async saveRemote(tableKey, data) {
+    const token = getAccessToken();
+    if (!token) return;
+    if (data === null || data === void 0) return;
+
+    if (tableKey === "system") {
+      // Server requires sudo role for system updates.
+      const res = await authFetch("/api/system", { method: "PUT", body: JSON.stringify(data) });
+      if (!res.ok) throw new Error("Failed saving system");
+      return;
+    }
+
+    // Users: not wired for bulk sync (auth admin rules vary).
+    // We still keep local persistence via DB.save() fallback.
+    if (tableKey === "users") return;
+
+    const backendTable = toBackendTable(tableKey);
+    const rows = Array.isArray(data) ? data : [];
+
+    const operations = rows.map((rec) => {
+      const mapped = toBackendRecord(tableKey, rec);
+      if (!mapped) return null;
+      return { table: backendTable, method: "POST", id: mapped.id, data: mapped };
+    }).filter(Boolean);
+
+    if (!operations.length) return;
+
+    const res = await authFetch("/api/sync", {
+      method: "POST",
+      body: JSON.stringify({ operations })
+    });
+    if (!res.ok) throw new Error("Failed saving via /api/sync");
   },
   async loadAll() {
     const result = {};
@@ -468,9 +876,58 @@ function App() {
   useEffect(() => {
     async function init() {
       try {
-        const seeded = await DB.isSeeded();
-        if (seeded) {
-          const d = await DB.loadAll();
+        let d = null;
+
+        // 1) If token exists, try Supabase-first (backend) load.
+        let me = null;
+        const token = getAccessToken();
+        if (token) {
+          try {
+            const res = await authFetch("/api/auth/me", { method: "GET" });
+            if (res.ok) me = await res.json();
+          } catch (e) {
+          }
+        }
+
+        if (me) {
+          window.dispatchEvent(new CustomEvent("bender:token", { detail: token }));
+          setCurrentUser(fromBackendUser(me));
+          d = await DB.loadAll();
+        } else {
+          // 2) Otherwise fallback to local IndexedDB seed/load.
+          const seeded = await DB.isSeeded();
+          if (seeded) d = await DB.loadAll();
+          else {
+            await DB.save("users", INIT_USERS);
+            await DB.save("cws", INIT_CWS);
+            await DB.save("farmers", INIT_FARMERS);
+            await DB.save("seasons", INIT_SEASONS);
+            await DB.save("station_seasons", INIT_STATION_SEASONS);
+            await DB.save("cherry", INIT_CHERRY);
+            await DB.save("cashbook", INIT_CASHBOOK);
+            await DB.save("bank", INIT_BANK);
+            await DB.save("expenses", INIT_EXPENSES);
+            await DB.save("debts", INIT_DEBTS);
+            await DB.save("stock", INIT_STOCK);
+            await DB.save("fund_requests", INIT_FUND_REQUESTS);
+            await DB.save("warehouse", INIT_WAREHOUSE_STOCK);
+            await DB.save("projects", INIT_PROJECTS);
+            await DB.save("project_costs", INIT_PROJECT_COSTS);
+            await DB.save("milestones", INIT_MILESTONES);
+            await DB.save("contractors", INIT_CONTRACTORS);
+            await DB.save("machines", INIT_MACHINES);
+            await DB.save("assistants", INIT_ASSISTANTS);
+            await DB.save("tasks", INIT_TASKS);
+            await DB.save("mach_tx", INIT_MACH_TX);
+            await DB.save("driver_logs", INIT_DRIVER_LOGS);
+            await DB.save("leaves", INIT_LEAVES);
+            await DB.save("system", INIT_SYSTEM);
+            await DB.markSeeded();
+            d = await DB.loadAll();
+          }
+        }
+
+        if (d) {
           if (d.users) setUsersRaw(d.users);
           if (d.cws) setCwsListRaw(d.cws);
           if (d.farmers) setFarmersRaw(d.farmers);
@@ -495,32 +952,6 @@ function App() {
           if (d.driver_logs) setDriverLogsRaw(d.driver_logs);
           if (d.leaves) setLeavesRaw(d.leaves);
           if (d.system) setSystemRaw(d.system);
-        } else {
-          await DB.save("users", INIT_USERS);
-          await DB.save("cws", INIT_CWS);
-          await DB.save("farmers", INIT_FARMERS);
-          await DB.save("seasons", INIT_SEASONS);
-          await DB.save("station_seasons", INIT_STATION_SEASONS);
-          await DB.save("cherry", INIT_CHERRY);
-          await DB.save("cashbook", INIT_CASHBOOK);
-          await DB.save("bank", INIT_BANK);
-          await DB.save("expenses", INIT_EXPENSES);
-          await DB.save("debts", INIT_DEBTS);
-          await DB.save("stock", INIT_STOCK);
-          await DB.save("fund_requests", INIT_FUND_REQUESTS);
-          await DB.save("warehouse", INIT_WAREHOUSE_STOCK);
-          await DB.save("projects", INIT_PROJECTS);
-          await DB.save("project_costs", INIT_PROJECT_COSTS);
-          await DB.save("milestones", INIT_MILESTONES);
-          await DB.save("contractors", INIT_CONTRACTORS);
-          await DB.save("machines", INIT_MACHINES);
-          await DB.save("assistants", INIT_ASSISTANTS);
-          await DB.save("tasks", INIT_TASKS);
-          await DB.save("mach_tx", INIT_MACH_TX);
-          await DB.save("driver_logs", INIT_DRIVER_LOGS);
-          await DB.save("leaves", INIT_LEAVES);
-          await DB.save("system", INIT_SYSTEM);
-          await DB.markSeeded();
         }
       } catch (e) {
         console.error("DB init error", e);
@@ -530,9 +961,24 @@ function App() {
     init();
   }, []);
   const addNote = (text, type = "info") => setNotifications((p) => [{ id: Date.now(), text, type, read: false, time: (/* @__PURE__ */ new Date()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }, ...p]);
-  const login = (email, password) => {
-    const u = users.find((x) => x.email === email && x.password === password && x.active);
-    return u || null;
+  const login = async (email, password) => {
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password })
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (!data?.token || !data?.user) return null;
+
+      setAccessToken(data.token);
+      // Inform SW (if registered) about the auth token so it can replay offline ops.
+      window.dispatchEvent(new CustomEvent("bender:token", { detail: data.token }));
+      return fromBackendUser(data.user);
+    } catch (e) {
+      return null;
+    }
   };
   const ctx = { users, setUsers, cwsList, setCwsList, farmers: farmers2, setFarmers, seasons, setSeasons, stationSeasons, setStationSeasons, cherry, setCherry, cashbook, setCashbook, bankTx, setBankTx, expenses, setExpenses, debts, setDebts, stock, setStock, fundRequests, setFundRequests, warehouseStock, setWarehouseStock, projects, setProjects, projectCosts, setProjectCosts, milestones, setMilestones, contractors, setContractors, machines, setMachines, assistants, setAssistants, tasks, setTasks, machTx, setMachTx, driverLogs, setDriverLogs, leaves, setLeaves, pending, setPending, system, setSystem, currentUser, online, setOnline, notifications, setNotifications, addNote, page, setPage, dbReady };
   if (!dbReady) return <div style={{ minHeight: "100vh", background: C.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
@@ -542,12 +988,13 @@ function App() {
         <div style={{ height: "100%", background: C.gold, borderRadius: 4, animation: "pulse 1.2s ease infinite" }} />
       </div>
     </div>;
-  if (!currentUser) return <Ctx.Provider value={ctx}><style>{GS}</style><LoginPage onLogin={(e, p) => {
-    const u = login(e, p);
+  if (!currentUser) return <Ctx.Provider value={ctx}><style>{GS}</style><LoginPage onLogin={async (e, p) => {
+    const u = await login(e, p);
     if (u) setCurrentUser(u);
     return !!u;
   }} system={system} /></Ctx.Provider>;
   return <Ctx.Provider value={ctx}><style>{GS}</style><Shell onLogout={() => {
+    setAccessToken(null);
     setCurrentUser(null);
     setPage({ view: "home", sub: null });
   }} /></Ctx.Provider>;
@@ -890,13 +1337,17 @@ function LoginPage({ onLogin, system }) {
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
-  const doLogin = () => {
+  const doLogin = async () => {
     setLoading(true);
     setErr("");
-    setTimeout(() => {
-      if (!onLogin(email, pw)) setErr("Invalid email or password.");
+    try {
+      const ok = await onLogin(email, pw);
+      if (!ok) setErr("Invalid email or password.");
+    } catch (e) {
+      setErr("Login failed");
+    } finally {
       setLoading(false);
-    }, 400);
+    }
   };
   return <div style={{ minHeight: "100vh", display: "flex", background: C.bg, flexDirection: "row" }}>
       <div style={{ flex: 1, position: "relative", overflow: "hidden" }} className="hide-mobile">
