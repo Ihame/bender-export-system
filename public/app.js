@@ -994,14 +994,45 @@ function App() {
   const addNote = (text, type = "info") => setNotifications((p) => [{ id: Date.now(), text, type, read: false, time: (/* @__PURE__ */ new Date()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }, ...p]);
   const login = async (email, password) => {
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password })
-      });
-      if (!res.ok) return null;
-      const data = await res.json();
-      if (!data?.token || !data?.user) return null;
+      const tryLogin = async () => {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password })
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (!data?.token || !data?.user) return null;
+        return data;
+      };
+
+      let data = await tryLogin();
+
+      // If the demo account doesn't exist in Supabase Auth yet, auto-create it.
+      if (!data) {
+        const demo = INIT_USERS.find((u) => u.email === email && u.password === password && u.active);
+        if (demo) {
+          try {
+            await fetch("/api/auth/signup", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                name: demo.name,
+                email: demo.email,
+                password: demo.password,
+                role: demo.role,
+                cwsAccess: demo.cwsAccess,
+                avatar: demo.avatar,
+                machineId: demo.machineId
+              })
+            });
+          } catch (e) {
+          }
+          data = await tryLogin();
+        }
+      }
+
+      if (!data) return null;
 
       setAccessToken(data.token);
       // Inform SW (if registered) about the auth token so it can replay offline ops.
