@@ -170,6 +170,7 @@ const INIT_CONTRACTORS = [
 ];
 const INIT_USERS = [
   // HQ
+  { id: "u0", name: "System Super Admin", email: "superadmin@bender.rw", password: "Admin@Bender2026!", role: "sudo", cwsAccess: [], machineId: null, avatar: "SA", createdAt: "2024-01-01", active: true },
   { id: "u1", name: "Jean Pierre Habimana", email: "sudo@bender.rw", password: "sudo123", role: "sudo", cwsAccess: [], machineId: null, avatar: "JP", createdAt: "2024-01-01", active: true },
   { id: "u2", name: "Marie Claire Uwimana", email: "md@bender.rw", password: "md123", role: "md", cwsAccess: [], machineId: null, avatar: "MC", createdAt: "2024-01-01", active: true },
   { id: "u3", name: "Patrick Nzabonimpa", email: "admin@bender.rw", password: "admin123", role: "admin", cwsAccess: [], machineId: null, avatar: "PN", createdAt: "2024-01-10", active: true },
