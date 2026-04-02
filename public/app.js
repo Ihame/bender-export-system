@@ -683,12 +683,12 @@ const DB = {
       return null;
     }
   },
-  async save(tableKey, data) {
+  async save(tableKey, data, prevData) {
     const token = getAccessToken();
     let remoteOk = false;
     if (token) {
       try {
-        await DB.saveRemote(tableKey, data);
+        await DB.saveRemote(tableKey, data, prevData);
         remoteOk = true;
       } catch (e) {
         console.warn("Remote save failed, keeping local copy:", tableKey, e);
@@ -738,7 +738,7 @@ const DB = {
     const rows = await res.json();
     return rows.map((row) => fromBackendRecord(tableKey, row));
   },
-  async saveRemote(tableKey, data) {
+  async saveRemote(tableKey, data, prevData) {
     const token = getAccessToken();
     if (!token) return;
     if (data === null || data === void 0) return;
@@ -755,13 +755,41 @@ const DB = {
     if (tableKey === "users") return;
 
     const backendTable = toBackendTable(tableKey);
-    const rows = Array.isArray(data) ? data : [];
+    const rowsNew = Array.isArray(data) ? data : [];
+    const rowsPrev = Array.isArray(prevData) ? prevData : [];
 
-    const operations = rows.map((rec) => {
-      const mapped = toBackendRecord(tableKey, rec);
-      if (!mapped) return null;
-      return { table: backendTable, method: "POST", id: mapped.id, data: mapped };
-    }).filter(Boolean);
+    // Delta-based sync:
+    // - Most UI writes prepend a new record (length + 1).
+    // - Using full arrays can trigger unique conflicts and failure modes.
+    // For adds/removes we upsert/delete only the changed record.
+    let operations = [];
+
+    if (rowsNew.length && rowsPrev.length && rowsNew.length === rowsPrev.length + 1) {
+      const prevIds = new Set(rowsPrev.map((r) => r && r.id).filter(Boolean));
+      const added = rowsNew.filter((r) => r && r.id && !prevIds.has(r.id));
+      if (added.length === 1) {
+        const mapped = toBackendRecord(tableKey, added[0]);
+        if (mapped) operations = [{ table: backendTable, method: "POST", id: mapped.id, data: mapped }];
+      }
+    }
+
+    if (!operations.length && rowsNew.length + 1 === rowsPrev.length) {
+      // one removed: issue DELETE for removed id
+      const newIds = new Set(rowsNew.map((r) => r && r.id).filter(Boolean));
+      const removed = rowsPrev.filter((r) => r && r.id && !newIds.has(r.id));
+      if (removed.length === 1) {
+        operations = [{ table: backendTable, method: "DELETE", id: removed[0].id, data: null }];
+      }
+    }
+
+    // Fallback: upsert all rows (previous behavior)
+    if (!operations.length) {
+      operations = rowsNew.map((rec) => {
+        const mapped = toBackendRecord(tableKey, rec);
+        if (!mapped) return null;
+        return { table: backendTable, method: "POST", id: mapped.id, data: mapped };
+      }).filter(Boolean);
+    }
 
     if (!operations.length) return;
 
@@ -769,7 +797,11 @@ const DB = {
       method: "POST",
       body: JSON.stringify({ operations })
     });
-    if (!res.ok) throw new Error("Failed saving via /api/sync");
+    if (!res.ok) {
+      let text = null;
+      try { text = await res.text(); } catch {}
+      throw new Error("Failed saving via /api/sync: " + (text || ("status=" + res.status)));
+    }
   },
   async loadAll() {
     const result = {};
@@ -844,7 +876,7 @@ function App() {
     const next = typeof val === "function" ? val : () => val;
     raw((prev) => {
       const newVal = next(prev);
-      DB.save(table, newVal);
+      DB.save(table, newVal, prev);
       return newVal;
     });
   };
