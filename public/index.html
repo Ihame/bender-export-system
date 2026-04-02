@@ -48,6 +48,9 @@
   <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js" crossorigin></script>
 
+  <!-- Babel for browser-side JSX transform (app.js is shipped as JSX) -->
+  <script src="https://unpkg.com/@babel/standalone@7.26.0/babel.min.js"></script>
+
   <!-- Supabase JS client (for Realtime subscriptions in the frontend) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js" crossorigin></script>
 
@@ -122,21 +125,46 @@
           Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } = Recharts;
   </script>
 
-  <script src="/app.js"></script>
+  <script type="text/babel" data-presets="react" src="/app.js"></script>
 
   <script>
   window.addEventListener('DOMContentLoaded', () => {
-    setTimeout(() => {
+    const mount = () => {
+      // app.js defines App in global scope; Babel transform is async-ish,
+      // so we retry for a short period.
+      const AppComp = window.App || (typeof App !== 'undefined' ? App : null);
+      if (!AppComp) return false;
+      ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(AppComp));
+      return true;
+    };
+
+    let attempts = 0;
+    const timer = setInterval(() => {
+      attempts++;
       try {
-        ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
-      } catch(e) {
+        if (mount() || attempts > 25) {
+          clearInterval(timer);
+          // If App never appeared, mount() above should have thrown (React.createElement)
+          // or we just exceeded attempts; show a clearer error.
+          if (!window.App && (typeof App === 'undefined')) {
+            document.getElementById('root').innerHTML =
+              '<div style="padding:40px;color:#ff6666;font-family:monospace;background:#080E0A;min-height:100vh">' +
+              '<h2 style="margin-bottom:16px">Startup Error</h2><pre>' +
+              'App was not defined. Check that app.js loaded successfully and that JSX transpilation is enabled.' +
+              '</pre></div>';
+          }
+          const splash = document.getElementById('splash');
+          setTimeout(() => { splash.classList.add('hide'); setTimeout(() => splash.remove(), 400); }, 800);
+        }
+      } catch (e) {
+        clearInterval(timer);
         document.getElementById('root').innerHTML =
           '<div style="padding:40px;color:#ff6666;font-family:monospace;background:#080E0A;min-height:100vh">' +
           '<h2 style="margin-bottom:16px">Startup Error</h2><pre>' + e.stack + '</pre></div>';
+        const splash = document.getElementById('splash');
+        setTimeout(() => { splash.classList.add('hide'); setTimeout(() => splash.remove(), 400); }, 800);
       }
-      const splash = document.getElementById('splash');
-      setTimeout(() => { splash.classList.add('hide'); setTimeout(() => splash.remove(), 400); }, 800);
-    }, 50);
+    }, 100);
   });
   </script>
 </body>
