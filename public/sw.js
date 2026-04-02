@@ -8,7 +8,7 @@
  *   The SW focuses on: caching, offline asset serving, and queue flush.
  * - Auth tokens are stored securely — never logged or exposed.
  */
-const VERSION      = "v2.0.0";
+const VERSION      = "v2.0.1";
 const STATIC_CACHE = "bender-static-" + VERSION;
 const CDN_CACHE    = "bender-cdn-"    + VERSION;
 const API_CACHE    = "bender-api-"    + VERSION;
