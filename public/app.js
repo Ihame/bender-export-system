@@ -923,6 +923,20 @@ function App() {
         if (me) {
           window.dispatchEvent(new CustomEvent("bender:token", { detail: token }));
           setCurrentUser(fromBackendUser(me));
+          // Ensure required FK seed exists in Supabase.
+          // Without `cws`/`farmers` rows, inserting a new GNR into `public.cherry`
+          // will fail due to foreign key constraints, and the UI may only see
+          // the local IndexedDB write.
+          try {
+            const [cwsRows, farmersRows] = await Promise.all([DB.loadRemote("cws"), DB.loadRemote("farmers")]);
+            const needSeed = !(Array.isArray(cwsRows) && cwsRows.length) || !(Array.isArray(farmersRows) && farmersRows.length);
+            if (needSeed) {
+              await DB.saveRemote("cws", INIT_CWS);
+              await DB.saveRemote("farmers", INIT_FARMERS);
+            }
+          } catch (e) {
+            console.warn("Supabase seed check failed (continuing):", e);
+          }
           d = await DB.loadAll();
         } else {
           // 2) Otherwise fallback to local IndexedDB seed/load.
