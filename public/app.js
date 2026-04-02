@@ -1054,7 +1054,9 @@ function App() {
       window.dispatchEvent(new CustomEvent("bender:token", { detail: data.token }));
       return fromBackendUser(data.user);
     } catch (e) {
-      return null;
+      // Last resort fallback for demo users if API auth is unavailable.
+      const demo = INIT_USERS.find((u) => u.email === email && u.password === password && u.active);
+      return demo || null;
     }
   };
   const ctx = { users, setUsers, cwsList, setCwsList, farmers: farmers2, setFarmers, seasons, setSeasons, stationSeasons, setStationSeasons, cherry, setCherry, cashbook, setCashbook, bankTx, setBankTx, expenses, setExpenses, debts, setDebts, stock, setStock, fundRequests, setFundRequests, warehouseStock, setWarehouseStock, projects, setProjects, projectCosts, setProjectCosts, milestones, setMilestones, contractors, setContractors, machines, setMachines, assistants, setAssistants, tasks, setTasks, machTx, setMachTx, driverLogs, setDriverLogs, leaves, setLeaves, pending, setPending, system, setSystem, currentUser, online, setOnline, notifications, setNotifications, addNote, page, setPage, dbReady };
