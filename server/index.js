@@ -273,6 +273,20 @@ const TABLES = [
   "machines","assistants","tasks","mach_tx","driver_logs","leaves",
 ];
 
+// ── Generic table loader (for Vercel /api/table) ─────────────────────
+// Frontend uses this endpoint to load all rows for a given table.
+app.get("/api/table", auth, async (req, res) => {
+  try {
+    const { table, since } = req.query || {};
+    if (!TABLES.includes(table)) return res.status(400).json({ error: "Unknown table" });
+    const filter = since ? `&updated_at=gte.${encodeURIComponent(since)}` : "";
+    const rows = await sbFetch(`/${table}?order=updated_at${filter}`);
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 TABLES.forEach(table => {
   const route = `/api/${table.replace(/_/g, "-")}`;
 

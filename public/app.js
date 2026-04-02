@@ -732,8 +732,7 @@ const DB = {
     }
 
     const backendTable = toBackendTable(tableKey);
-    const route = "/api/" + backendTable.replace(/_/g, "-");
-    const res = await authFetch(route, { method: "GET" });
+    const res = await authFetch(`/api/table?table=${encodeURIComponent(backendTable)}`, { method: "GET" });
     if (!res.ok) throw new Error(`Failed loading ${tableKey}`);
     const rows = await res.json();
     return rows.map((row) => fromBackendRecord(tableKey, row));
